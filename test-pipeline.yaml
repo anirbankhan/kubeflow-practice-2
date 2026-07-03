@@ -1,0 +1,239 @@
+# PIPELINE DEFINITION
+# Name: test-pipeline
+# Description: This is a test pipeline
+# Inputs:
+#    csv_data: str
+components:
+  comp-create-dataset:
+    executorLabel: exec-create-dataset
+    inputDefinitions:
+      parameters:
+        dataset_path:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        insurance_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-process-dataset:
+    executorLabel: exec-process-dataset
+    inputDefinitions:
+      artifacts:
+        input_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        processed_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-train-model:
+    executorLabel: exec-train-model
+    inputDefinitions:
+      artifacts:
+        input_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-create-dataset:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - create_dataset
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef create_dataset(dataset_path: str, insurance_dataset: Output[Dataset]):\n\
+          \    import pandas as pd\n    df = pd.read_csv(dataset_path)\n    with open\
+          \ (insurance_dataset.path, 'w') as f:\n        df.to_csv(f,index=False)\n\
+          \n"
+        image: python:3.9.0
+    exec-process-dataset:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - process_dataset
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef process_dataset(input_dataset: Input[Dataset], processed_dataset:\
+          \ Output[Dataset]):\n    import pandas as pd\n    with open(input_dataset.path,\
+          \ 'r') as f:\n        df = pd.read_csv(f)\n    print (df.head())\n    #\
+          \ feature 1: calculate bmi\n    df[\"bmi\"] = df[\"weight\"] / (df[\"height\"\
+          ] **2)\n    # Feature 2 : Age group\n    # < 25 : young , < 45 : adult ,\
+          \ < 60 : middle_aged , > 60 senior\n    def age_group(age):\n        if\
+          \ age < 25:\n            return \"young\"\n        if age < 45:\n      \
+          \      return \"adult\"\n        if age < 60:\n            return \"mid_aged\"\
+          \n        return \"senior\"\n    df[\"age_group\"] = df[\"age\"].apply(age_group)\n\
+          \    # feature 3 : Lifestyle Risk\n    def lifestyle_risk(row):\n      \
+          \  if row[\"bmi\"] > 30 and row[\"smoker\"]:\n            return \"high\"\
+          \n        elif row[\"bmi\"] > 20 and row[\"smoker\"]:\n            return\
+          \ \"medium\"\n        return \"low\"\n    # return df\n    df[\"lifestyle_risk\"\
+          ] = df.apply(lifestyle_risk, axis=1)\n    # Feature 4: city tier\n    tier_1_cities\
+          \ = [\"Mumbai\", \"Delhi\", \"Bangalore\", \"Chennai\", \"Kolkata\", \"\
+          Hyderabad\", \"Pune\"]\n    tier_2_cities = [\n        \"Jaipur\", \"Chandigarh\"\
+          , \"Indore\", \"Lucknow\", \"Patna\", \"Ranchi\", \"Visakhapatnam\", \"\
+          Coimbatore\",\n        \"Bhopal\", \"Nagpur\", \"Vadodara\", \"Surat\",\
+          \ \"Rajkot\", \"Jodhpur\", \"Raipur\", \"Amritsar\", \"Varanasi\",\n   \
+          \     \"Agra\", \"Dehradun\", \"Mysore\", \"Jabalpur\", \"Guwahati\", \"\
+          Thiruvananthapuram\", \"Ludhiana\", \"Nashik\",\n        \"Allahabad\",\
+          \ \"Udaipur\", \"Aurangabad\", \"Hubli\", \"Belgaum\", \"Salem\", \"Vijayawada\"\
+          , \"Tiruchirappalli\",\n        \"Bhavnagar\", \"Gwalior\", \"Dhanbad\"\
+          , \"Bareilly\", \"Aligarh\", \"Gaya\", \"Kozhikode\", \"Warangal\",\n  \
+          \      \"Kolhapur\", \"Bilaspur\", \"Jalandhar\", \"Noida\", \"Guntur\"\
+          , \"Asansol\", \"Siliguri\"\n    ]\n    def city_tier(city):\n        if\
+          \ city in tier_1_cities:\n            return 1\n        elif city in tier_2_cities:\n\
+          \            return 2\n        else:\n            return 3\n    df[\"city_tier\"\
+          ] = df[\"city\"].apply(city_tier)\n    df = df.drop(columns=['age','weight','height','smoker','city'])\n\
+          \    print (\"### Dataset after Pre-processing ###\")\n    print (df.head())\n\
+          \    with open(processed_dataset.path, 'w') as f:\n        df.to_csv(f)\n\
+          \n"
+        image: python:3.9.0
+    exec-train-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - train_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef train_model(input_dataset: Input[Dataset],model: Output[Model]):\n\
+          \    import pandas as pd\n    import pickle\n    from sklearn.model_selection\
+          \ import train_test_split\n    from sklearn.preprocessing import StandardScaler,\
+          \ OneHotEncoder\n    from sklearn.pipeline import Pipeline\n    from sklearn.compose\
+          \ import ColumnTransformer\n    from sklearn.metrics import accuracy_score\n\
+          \    from sklearn.ensemble import RandomForestClassifier\n    with open(input_dataset.path,\
+          \ 'r') as f:\n        df = pd.read_csv(f)\n\n    X = df[['income_lpa', 'occupation',\
+          \  'bmi',\n       'age_group', 'lifestyle_risk', 'city_tier']]\n    y =\
+          \ df[['insurance_premium_category']]\n\n    print(\"######output####\")\n\
+          \    print (y)\n\n    text_columns = ['occupation','age_group','lifestyle_risk','city_tier']\n\
+          \    numeric_columns = ['income_lpa','bmi']\n\n    preprocessor = ColumnTransformer(\n\
+          \        transformers=[\n            (\"cat\",OneHotEncoder(),text_columns),\n\
+          \            (\"num\",\"passthrough\",numeric_columns)\n        ]\n    )\n\
+          \n    pipeline = Pipeline(steps=[\n        (\"preprocessor\", preprocessor),\n\
+          \        (\"classifier\", RandomForestClassifier(random_state=42))\n   \
+          \ ])\n\n    X_train,X_test,y_train,y_test = train_test_split(X,y,test_size=0.2,random_state=1)\n\
+          \    pipeline.fit(X_train,y_train)\n    with open(model.path, 'wb') as f:\n\
+          \        pickle.dump(pipeline, f)\n\n"
+        image: python:3.9.0
+pipelineInfo:
+  description: This is a test pipeline
+  name: test-pipeline
+root:
+  dag:
+    tasks:
+      create-dataset:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-create-dataset
+        inputs:
+          parameters:
+            dataset_path:
+              componentInputParameter: csv_data
+        taskInfo:
+          name: create-dataset
+      process-dataset:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-process-dataset
+        dependentTasks:
+        - create-dataset
+        inputs:
+          artifacts:
+            input_dataset:
+              taskOutputArtifact:
+                outputArtifactKey: insurance_dataset
+                producerTask: create-dataset
+        taskInfo:
+          name: process-dataset
+      train-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-model
+        dependentTasks:
+        - process-dataset
+        inputs:
+          artifacts:
+            input_dataset:
+              taskOutputArtifact:
+                outputArtifactKey: processed_dataset
+                producerTask: process-dataset
+        taskInfo:
+          name: train-model
+  inputDefinitions:
+    parameters:
+      csv_data:
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.16.1
